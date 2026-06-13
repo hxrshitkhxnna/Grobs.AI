@@ -221,6 +221,18 @@ class LLMService:
         
         return status
 
+    def _is_provider_available(self, provider: str) -> bool:
+        """Check if a provider is configured and available."""
+        if provider == "openai":
+            return self.openai_client is not None
+        if provider == "anthropic":
+            return self.anthropic_client is not None
+        if provider == "google":
+            return self.google_client is not None
+        if provider == "local":
+            return True
+        return False
+
     def generate_text(
         self,
         prompt: str,
@@ -232,7 +244,7 @@ class LLMService:
         **kwargs
     ) -> LLMResponse:
         """
-        Generate text using LLM with caching.
+        Generate text using LLM with multi-provider fallback and caching.
         """
         if use_cache:
             cache_key = f"{prompt}:{system_prompt}:{model}:{temperature}:{max_tokens}"
@@ -245,27 +257,50 @@ class LLMService:
             logger.error("generate_text called with empty prompt.")
             return LLMResponse(content="", model="none", provider="none")
 
-        # FIX: Clamp temperature to a safe range instead of letting providers crash
+        # FIX: Clamp temperature to a safe range
         temperature = max(0.0, min(temperature, 2.0))
 
-        provider = kwargs.get("provider", self.default_provider)
+        primary_provider = kwargs.get("provider", self.default_provider)
+        
+        # Define priority order for fallbacks
+        providers_to_try = [primary_provider]
+        for p in ["google", "openai", "anthropic"]:
+            if p != primary_provider:
+                providers_to_try.append(p)
+        
+        # Add local as absolute last resort if nothing else works
+        providers_to_try.append("local")
 
         result = None
-        if provider == "openai" and self.openai_client:
-            result = self._generate_openai(
-                prompt, system_prompt, model or self.openai_model, temperature, max_tokens
-            )
-        elif provider == "anthropic" and self.anthropic_client:
-            result = self._generate_anthropic(
-                prompt, system_prompt, model or self.anthropic_model, temperature, max_tokens
-            )
-        elif provider == "google" and self.google_client:
-            result = self._generate_google(
-                prompt, system_prompt, model or self.google_model, temperature, max_tokens
-            )
-        elif provider == "local":
-            result = self._generate_local(prompt, system_prompt)
-        else:
+        for provider in providers_to_try:
+            if not self._is_provider_available(provider):
+                continue
+                
+            try:
+                if provider == "openai":
+                    result = self._generate_openai(
+                        prompt, system_prompt, model if provider == primary_provider else self.openai_model, temperature, max_tokens
+                    )
+                elif provider == "anthropic":
+                    result = self._generate_anthropic(
+                        prompt, system_prompt, model if provider == primary_provider else self.anthropic_model, temperature, max_tokens
+                    )
+                elif provider == "google":
+                    result = self._generate_google(
+                        prompt, system_prompt, model if provider == primary_provider else self.google_model, temperature, max_tokens
+                    )
+                elif provider == "local":
+                    result = self._generate_local(prompt, system_prompt)
+                
+                # If we got a valid result (not a fallback), break the loop
+                if result and result.provider != "fallback":
+                    logger.info(f"Successfully generated text using {provider}")
+                    break
+            except Exception as e:
+                logger.warning(f"Provider {provider} failed: {e}. Trying next available provider.")
+                continue
+
+        if not result or result.provider == "fallback":
             result = self._generate_fallback(prompt, system_prompt)
 
         if use_cache and result and result.provider != "fallback":
@@ -284,7 +319,7 @@ class LLMService:
         **kwargs
     ) -> LLMResponse:
         """
-        Generate text using LLM asynchronously with caching.
+        Generate text using LLM asynchronously with multi-provider fallback and caching.
         """
         if use_cache:
             cache_key = f"{prompt}:{system_prompt}:{model}:{temperature}:{max_tokens}:async"
@@ -298,24 +333,45 @@ class LLMService:
             return LLMResponse(content="", model="none", provider="none")
 
         temperature = max(0.0, min(temperature, 2.0))
-        provider = kwargs.get("provider", self.default_provider)
+        primary_provider = kwargs.get("provider", self.default_provider)
+        
+        # Define priority order for fallbacks
+        providers_to_try = [primary_provider]
+        for p in ["google", "openai", "anthropic"]:
+            if p != primary_provider:
+                providers_to_try.append(p)
+        
+        providers_to_try.append("local")
 
         result = None
-        if provider == "openai" and self.async_openai_client:
-            result = await self._generate_openai_async(
-                prompt, system_prompt, model or self.openai_model, temperature, max_tokens
-            )
-        elif provider == "anthropic" and self.async_anthropic_client:
-            result = await self._generate_anthropic_async(
-                prompt, system_prompt, model or self.anthropic_model, temperature, max_tokens
-            )
-        elif provider == "google" and self.google_client:
-            result = await self._generate_google_async(
-                prompt, system_prompt, model or self.google_model, temperature, max_tokens
-            )
-        elif provider == "local":
-            result = self._generate_local(prompt, system_prompt)
-        else:
+        for provider in providers_to_try:
+            if not self._is_provider_available(provider):
+                continue
+                
+            try:
+                if provider == "openai":
+                    result = await self._generate_openai_async(
+                        prompt, system_prompt, model if provider == primary_provider else self.openai_model, temperature, max_tokens
+                    )
+                elif provider == "anthropic":
+                    result = await self._generate_anthropic_async(
+                        prompt, system_prompt, model if provider == primary_provider else self.anthropic_model, temperature, max_tokens
+                    )
+                elif provider == "google":
+                    result = await self._generate_google_async(
+                        prompt, system_prompt, model if provider == primary_provider else self.google_model, temperature, max_tokens
+                    )
+                elif provider == "local":
+                    result = self._generate_local(prompt, system_prompt)
+                
+                if result and result.provider != "fallback":
+                    logger.info(f"Successfully generated text async using {provider}")
+                    break
+            except Exception as e:
+                logger.warning(f"Async provider {provider} failed: {e}. Trying next available provider.")
+                continue
+
+        if not result or result.provider == "fallback":
             result = self._generate_fallback(prompt, system_prompt)
 
         if use_cache and result and result.provider != "fallback":
@@ -431,6 +487,11 @@ class LLMService:
                 config=config,
             )
         except Exception as e:
+            msg = str(e).lower()
+            if "429" in msg or "resource_exhausted" in msg:
+                logger.error("Google Gemini quota exceeded (429 RESOURCE_EXHAUSTED). Returning fallback.")
+                return self._generate_fallback(prompt, system_prompt)
+                
             logger.warning(f"Google Gemini async generation with config failed: {e}. Falling back to combined prompt.")
             full_prompt = f"{system_prompt}\n\n{prompt}" if system_prompt else prompt
             try:
@@ -595,29 +656,91 @@ class LLMService:
 
     def _generate_fallback(self, prompt: str, system_prompt: Optional[str]) -> LLMResponse:
         """Fallback when no provider is available."""
-        logger.warning("No LLM provider available, returning placeholder")
+        logger.warning("No LLM provider available, returning placeholder or heuristic result")
+        
+        # If it looks like a resume parsing task, use the heuristic
+        if "RESUME TEXT:" in prompt:
+            try:
+                heuristic_data = self._heuristic_resume_parser(prompt)
+                if heuristic_data and "error" not in heuristic_data:
+                    return LLMResponse(
+                        content=json.dumps(heuristic_data),
+                        model="heuristic-v4",
+                        provider="heuristic",
+                        is_fallback=True
+                    )
+            except Exception as e:
+                logger.error(f"Heuristic fallback failed: {e}")
+
         return LLMResponse(
-            content="AI service temporarily unavailable. Please configure an LLM provider.",
-            model="none",
+            content="AI service temporarily unavailable. Our heuristic model is processing your request.",
+            model="heuristic-core",
             provider="fallback",
+            is_fallback=True
         )
 
     async def generate_structured_output_async(
         self,
         prompt: str,
-        schema: Dict[str, Any],
+        schema: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
         use_cache: bool = True,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> Union[Dict[str, Any], Any]:
         """
-        Generate structured JSON output asynchronously with caching.
+        Generate structured JSON output asynchronously with multi-provider fallback and caching.
         """
+        response_model = kwargs.get("response_model")
+        
+        # If schema is missing but response_model is provided, extract schema from model
+        if schema is None and response_model:
+            if hasattr(response_model, "model_json_schema"): # Pydantic v2
+                schema = response_model.model_json_schema()
+            elif hasattr(response_model, "schema"): # Pydantic v1
+                schema = response_model.schema()
+            else:
+                # Handle List[Model] or other typing generics
+                try:
+                    from typing import get_args, get_origin
+                    if get_origin(response_model) is list:
+                        inner_type = get_args(response_model)[0]
+                        if hasattr(inner_type, "model_json_schema"):
+                            schema = {
+                                "type": "array",
+                                "items": inner_type.model_json_schema()
+                            }
+                        elif hasattr(inner_type, "schema"):
+                            schema = {
+                                "type": "array",
+                                "items": inner_type.schema()
+                            }
+                except:
+                    pass
+
         if use_cache:
-            cache_key = f"{prompt}:{json.dumps(schema)}:{system_prompt}:structured:async"
+            # We must have a schema (dict) for the cache key
+            cache_schema = schema if isinstance(schema, dict) else {}
+            cache_key = f"{prompt}:{json.dumps(cache_schema)}:{system_prompt}:structured:async"
             if cache_key in self.cache:
                 logger.info("Using cached async structured LLM response")
-                return self.cache[cache_key]
+                cached_res = self.cache[cache_key]
+                # If we have a response_model, try to parse the cached dict back to the model
+                if response_model and isinstance(cached_res, dict) and "error" not in cached_res:
+                    try:
+                        from typing import get_args, get_origin
+                        if hasattr(response_model, "model_validate"):
+                            return response_model.model_validate(cached_res)
+                        elif hasattr(response_model, "parse_obj"):
+                            return response_model.parse_obj(cached_res)
+                        elif get_origin(response_model) is list:
+                            inner_type = get_args(response_model)[0]
+                            if hasattr(inner_type, "model_validate"):
+                                return [inner_type.model_validate(item) for item in cached_res]
+                            elif hasattr(inner_type, "parse_obj"):
+                                return [inner_type.parse_obj(item) for item in cached_res]
+                    except Exception as e:
+                        logger.warning(f"Failed to parse cached response to model: {e}")
+                return cached_res
 
         # FIX: Validate inputs early
         if not prompt or not prompt.strip():
@@ -625,7 +748,7 @@ class LLMService:
             return {"error": "Empty prompt provided"}
 
         if not isinstance(schema, dict):
-            logger.error("generate_structured_output_async: schema must be a dict.")
+            logger.error(f"generate_structured_output_async: schema must be a dict (got {type(schema)}).")
             return {"error": "Invalid schema"}
 
         schema_prompt = (
@@ -634,71 +757,158 @@ class LLMService:
             "Do not include any explanation or markdown formatting. Only return valid JSON."
         )
 
-        response = await self.generate_text_async(
-            prompt=f"{schema_prompt}\n\n{prompt}",
-            system_prompt=system_prompt,
-            use_cache=False, # We handle caching here for structured output
-            **kwargs,
-        )
+        primary_provider = kwargs.get("provider", self.default_provider)
+        providers_to_try = [primary_provider]
+        for p in ["google", "openai", "anthropic"]:
+            if p != primary_provider:
+                providers_to_try.append(p)
 
-        # FIX: More robust JSON extraction - search for the first '{' and last '}'
-        # This handles preamble/postamble text from the LLM better than stripping
-        content = response.content
         result = None
-        
-        # If response was a fallback, return as such
-        if response.provider == "fallback":
-            return {"error": "AI service temporarily unavailable", "provider": "fallback"}
-            
-        try:
-            json_match = re.search(r'(\{.*\})', content, re.DOTALL)
-            if json_match:
-                content = json_match.group(1)
-            else:
-                # If no { } found, try stripping markdown fences as fallback
-                content = re.sub(r"^```[a-zA-Z]*\s*", "", content)
-                content = re.sub(r"\s*```$", "", content.strip())
-        except Exception as e:
-            logger.warning("Error during robust JSON extraction async: %s", e)
+        for provider in providers_to_try:
+            if not self._is_provider_available(provider):
+                continue
+                
+            try:
+                # Force specific provider for this attempt
+                attempt_kwargs = kwargs.copy()
+                attempt_kwargs["provider"] = provider
+                
+                response = await self.generate_text_async(
+                    prompt=f"{schema_prompt}\n\n{prompt}",
+                    system_prompt=system_prompt,
+                    use_cache=False, 
+                    **attempt_kwargs,
+                )
 
-            content = content.strip()
+                if response.provider == "fallback":
+                    continue
 
-            if not content:
-                logger.error("LLM returned an empty response for async structured output.")
-                result = {"error": "Empty response from LLM"}
-            else:
+                content = response.content
+                
+                # Robust JSON extraction
+                json_match = re.search(r'(\{.*\})', content, re.DOTALL)
+                if json_match:
+                    content = json_match.group(1)
+                else:
+                    # If no { } found, try stripping markdown fences as fallback
+                    content = re.sub(r"^```[a-zA-Z]*\s*", "", content)
+                    content = re.sub(r"\s*```$", "", content.strip())
+                
+                content = content.strip()
+                if not content:
+                    logger.warning(f"Empty content from {provider} for structured output. Trying next.")
+                    continue
+                    
                 try:
                     result = json.loads(content)
-                except json.JSONDecodeError as e:
+                except json.JSONDecodeError:
+                    # Try to fix common JSON errors (like trailing commas)
                     try:
-                        # Remove trailing commas before closing braces/brackets
                         fixed_content = re.sub(r',\s*([\]}])', r'\1', content)
                         result = json.loads(fixed_content)
                     except:
-                        logger.error("Failed to parse async JSON response: %s\nRaw content: %r", e, content)
-                        result = {"error": "Failed to parse structured output", "raw": content}
+                        logger.warning(f"Failed to parse JSON from {provider}. Trying next provider.")
+                        continue
+                
+                # If we got here, we have a valid result
+                if result and "error" not in result:
+                    logger.info(f"Successfully generated structured output using {provider}")
+                    break
+                    
+            except Exception as e:
+                logger.warning(f"Structured output failed for {provider}: {e}. Trying next.")
+                continue
+
+        # If all providers failed or returned invalid JSON
+        if not result or "error" in result:
+            logger.warning("All LLM providers failed for structured output. Falling back to heuristic.")
+            # If it's a resume prompt, use heuristic
+            if "RESUME TEXT:" in prompt:
+                result = self._heuristic_resume_parser(prompt)
+            else:
+                result = {"error": "AI service temporarily unavailable", "provider": "fallback"}
 
         if use_cache and result and "error" not in result:
             self.cache[cache_key] = result
         
+        # If successful and response_model provided, parse into model
+        if response_model and result and "error" not in result:
+            try:
+                from typing import get_args, get_origin
+                if hasattr(response_model, "model_validate"):
+                    return response_model.model_validate(result)
+                elif hasattr(response_model, "parse_obj"):
+                    return response_model.parse_obj(result)
+                elif get_origin(response_model) is list:
+                    inner_type = get_args(response_model)[0]
+                    if hasattr(inner_type, "model_validate"):
+                        return [inner_type.model_validate(item) for item in result]
+                    elif hasattr(inner_type, "parse_obj"):
+                        return [inner_type.parse_obj(item) for item in result]
+            except Exception as e:
+                logger.warning(f"Failed to parse response to model: {e}")
+                
         return result
 
     def generate_structured_output(
         self,
         prompt: str,
-        schema: Dict[str, Any],
+        schema: Optional[Dict[str, Any]] = None,
         system_prompt: Optional[str] = None,
         use_cache: bool = True,
         **kwargs
-    ) -> Dict[str, Any]:
+    ) -> Union[Dict[str, Any], Any]:
         """
-        Generate structured JSON output with caching.
+        Generate structured JSON output with multi-provider fallback and caching.
         """
+        response_model = kwargs.get("response_model")
+        
+        # If schema is missing but response_model is provided, extract schema from model
+        if schema is None and response_model:
+            if hasattr(response_model, "model_json_schema"): # Pydantic v2
+                schema = response_model.model_json_schema()
+            elif hasattr(response_model, "schema"): # Pydantic v1
+                schema = response_model.schema()
+            else:
+                try:
+                    from typing import get_args, get_origin
+                    if get_origin(response_model) is list:
+                        inner_type = get_args(response_model)[0]
+                        if hasattr(inner_type, "model_json_schema"):
+                            schema = {
+                                "type": "array",
+                                "items": inner_type.model_json_schema()
+                            }
+                        elif hasattr(inner_type, "schema"):
+                            schema = {
+                                "type": "array",
+                                "items": inner_type.schema()
+                            }
+                except:
+                    pass
+
         if use_cache:
-            cache_key = f"{prompt}:{json.dumps(schema)}:{system_prompt}:structured"
+            cache_schema = schema if isinstance(schema, dict) else {}
+            cache_key = f"{prompt}:{json.dumps(cache_schema)}:{system_prompt}:structured"
             if cache_key in self.cache:
                 logger.info("Using cached structured LLM response")
-                return self.cache[cache_key]
+                cached_res = self.cache[cache_key]
+                if response_model and isinstance(cached_res, dict) and "error" not in cached_res:
+                    try:
+                        from typing import get_args, get_origin
+                        if hasattr(response_model, "model_validate"):
+                            return response_model.model_validate(cached_res)
+                        elif hasattr(response_model, "parse_obj"):
+                            return response_model.parse_obj(cached_res)
+                        elif get_origin(response_model) is list:
+                            inner_type = get_args(response_model)[0]
+                            if hasattr(inner_type, "model_validate"):
+                                return [inner_type.model_validate(item) for item in cached_res]
+                            elif hasattr(inner_type, "parse_obj"):
+                                return [inner_type.parse_obj(item) for item in cached_res]
+                    except:
+                        pass
+                return cached_res
 
         # FIX: Validate inputs early
         if not prompt or not prompt.strip():
@@ -706,7 +916,7 @@ class LLMService:
             return {"error": "Empty prompt provided"}
 
         if not isinstance(schema, dict):
-            logger.error("generate_structured_output: schema must be a dict.")
+            logger.error(f"generate_structured_output: schema must be a dict (got {type(schema)}).")
             return {"error": "Invalid schema"}
 
         schema_prompt = (
@@ -715,54 +925,90 @@ class LLMService:
             "Do not include any explanation or markdown formatting. Only return valid JSON."
         )
 
-        response = self.generate_text(
-            prompt=f"{schema_prompt}\n\n{prompt}",
-            system_prompt=system_prompt,
-            use_cache=False, # We handle caching here
-            **kwargs,
-        )
+        primary_provider = kwargs.get("provider", self.default_provider)
+        providers_to_try = [primary_provider]
+        for p in ["google", "openai", "anthropic"]:
+            if p != primary_provider:
+                providers_to_try.append(p)
 
-        # FIX: More robust JSON extraction - search for the first '{' and last '}'
-        # This handles preamble/postamble text from the LLM better than simple stripping
-        content = response.content
         result = None
-        
-        # If response was a fallback, return as such
-        if response.provider == "fallback":
-            return {"error": "AI service temporarily unavailable", "provider": "fallback"}
-            
-        try:
-            json_match = re.search(r'(\{.*\})', content, re.DOTALL)
-            if json_match:
-                content = json_match.group(1)
-            else:
-                # If no { } found, try stripping markdown fences as fallback
-                content = re.sub(r"^```[a-zA-Z]*\s*", "", content)
-                content = re.sub(r"\s*```$", "", content.strip())
-        except Exception as e:
-            logger.warning("Error during robust JSON extraction: %s", e)
+        for provider in providers_to_try:
+            if not self._is_provider_available(provider):
+                continue
+                
+            try:
+                attempt_kwargs = kwargs.copy()
+                attempt_kwargs["provider"] = provider
+                
+                response = self.generate_text(
+                    prompt=f"{schema_prompt}\n\n{prompt}",
+                    system_prompt=system_prompt,
+                    use_cache=False, 
+                    **attempt_kwargs,
+                )
 
-            content = content.strip()
+                if response.provider == "fallback":
+                    continue
 
-            if not content:
-                logger.error("LLM returned an empty response for structured output.")
-                result = {"error": "Empty response from LLM"}
-            else:
+                content = response.content
+                
+                # Robust JSON extraction
+                json_match = re.search(r'(\{.*\})', content, re.DOTALL)
+                if json_match:
+                    content = json_match.group(1)
+                else:
+                    # If no { } found, try stripping markdown fences as fallback
+                    content = re.sub(r"^```[a-zA-Z]*\s*", "", content)
+                    content = re.sub(r"\s*```$", "", content.strip())
+                
+                content = content.strip()
+                if not content:
+                    continue
+                    
                 try:
                     result = json.loads(content)
-                except json.JSONDecodeError as e:
-                    # Final attempt: try to fix common JSON errors (like trailing commas)
+                except json.JSONDecodeError:
                     try:
-                        # Remove trailing commas before closing braces/brackets
                         fixed_content = re.sub(r',\s*([\]}])', r'\1', content)
                         result = json.loads(fixed_content)
                     except:
-                        logger.error("Failed to parse JSON response: %s\nRaw content: %r", e, content)
-                        result = {"error": "Failed to parse structured output", "raw": content}
+                        continue
+                
+                if result and "error" not in result:
+                    logger.info(f"Successfully generated structured output using {provider}")
+                    break
+                    
+            except Exception as e:
+                logger.warning(f"Structured output failed for {provider}: {e}. Trying next.")
+                continue
+
+        if not result or "error" in result:
+            logger.warning("All LLM providers failed for structured output. Falling back to heuristic.")
+            if "RESUME TEXT:" in prompt:
+                result = self._heuristic_resume_parser(prompt)
+            else:
+                result = {"error": "AI service temporarily unavailable", "provider": "fallback"}
 
         if use_cache and result and "error" not in result:
             self.cache[cache_key] = result
         
+        # If successful and response_model provided, parse into model
+        if response_model and result and "error" not in result:
+            try:
+                from typing import get_args, get_origin
+                if hasattr(response_model, "model_validate"):
+                    return response_model.model_validate(result)
+                elif hasattr(response_model, "parse_obj"):
+                    return response_model.parse_obj(result)
+                elif get_origin(response_model) is list:
+                    inner_type = get_args(response_model)[0]
+                    if hasattr(inner_type, "model_validate"):
+                        return [inner_type.model_validate(item) for item in result]
+                    elif hasattr(inner_type, "parse_obj"):
+                        return [inner_type.parse_obj(item) for item in result]
+            except Exception as e:
+                logger.warning(f"Failed to parse response to model: {e}")
+                
         return result
 
     def _heuristic_resume_parser(self, prompt: str) -> Dict[str, Any]:

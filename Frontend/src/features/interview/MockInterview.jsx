@@ -29,6 +29,54 @@ const MockInterview = () => {
   const [timeElapsed, setTimeElapsed] = useState(0);
   const isSubmittingRef = useRef(false); // Prevent double submissions
 
+  const loadSession = useCallback(async (id) => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await api.get(`/api/interview/sessions/${id}`);
+      setSession(response.data);
+      
+      // Load questions
+      const questionsResponse = await api.get(`/api/interview/sessions/${id}/questions`);
+      setQuestions(questionsResponse.data);
+      
+      // Set current question index
+      setCurrentQuestionIndex(response.data.current_question_index || 0);
+    } catch (error) {
+      console.error("Error loading session:", error);
+      setError('Failed to load interview session. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getFeedback = useCallback(async (questionId) => {
+    try {
+      const response = await api.post(`/api/interview/sessions/${session.id}/feedback/${questionId}`);
+      setFeedback(response.data.answer);
+    } catch (error) {
+      console.error("Error getting feedback:", error);
+      // Mock feedback with more realistic data
+      setFeedback({
+        score: Math.floor(Math.random() * 30) + 60,
+        feedback: "Good attempt! Consider adding more specific examples and quantifiable results.",
+        strengths: ["Clear communication", "Structured response"],
+        improvements: ["Add more quantifiable metrics", "Be more specific about your role"],
+        suggested_improvements: ["Use the STAR method more explicitly", "Include specific outcomes"]
+      });
+    }
+  }, [session?.id]);
+
+  const completeSession = useCallback(async () => {
+    try {
+      const response = await api.post(`/api/interview/sessions/${session.id}/complete`);
+      setSession(response.data.session);
+    } catch (error) {
+      console.error("Error completing session:", error);
+      setSession(prev => ({ ...prev, status: 'completed', overall_score: 75 }));
+    }
+  }, [session?.id]);
+
   // Load existing session if sessionId provided
   useEffect(() => {
     if (sessionId) {
@@ -50,27 +98,6 @@ const MockInterview = () => {
       }
     };
   }, [showSetup, session?.status, showFeedback]);
-
-  const loadSession = useCallback(async (id) => {
-    try {
-      setLoading(true);
-      setError(null);
-      const response = await api.get(`/api/interview/sessions/${id}`);
-      setSession(response.data);
-      
-      // Load questions
-      const questionsResponse = await api.get(`/api/interview/sessions/${id}/questions`);
-      setQuestions(questionsResponse.data);
-      
-      // Set current question index
-      setCurrentQuestionIndex(response.data.current_question_index || 0);
-    } catch (error) {
-      console.error("Error loading session:", error);
-      setError('Failed to load interview session. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   const startNewSession = async () => {
     try {
@@ -159,33 +186,6 @@ const MockInterview = () => {
       await completeSession();
     }
   };
-
-  const getFeedback = useCallback(async (questionId) => {
-    try {
-      const response = await api.post(`/api/interview/sessions/${session.id}/feedback/${questionId}`);
-      setFeedback(response.data.answer);
-    } catch (error) {
-      console.error("Error getting feedback:", error);
-      // Mock feedback with more realistic data
-      setFeedback({
-        score: Math.floor(Math.random() * 30) + 60,
-        feedback: "Good attempt! Consider adding more specific examples and quantifiable results.",
-        strengths: ["Clear communication", "Structured response"],
-        improvements: ["Add more quantifiable metrics", "Be more specific about your role"],
-        suggested_improvements: ["Use the STAR method more explicitly", "Include specific outcomes"]
-      });
-    }
-  }, [session.id]);
-
-  const completeSession = useCallback(async () => {
-    try {
-      const response = await api.post(`/api/interview/sessions/${session.id}/complete`);
-      setSession(response.data.session);
-    } catch (error) {
-      console.error("Error completing session:", error);
-      setSession(prev => ({ ...prev, status: 'completed', overall_score: 75 }));
-    }
-  }, [session.id]);
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);

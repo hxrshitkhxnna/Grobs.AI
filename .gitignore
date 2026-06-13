@@ -1,3 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+ENV/
+/.venv
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+*.egg
+
+# Pytest
+.pytest_cache/
+
+# VS Code
+.vscode/
+
+# JetBrains
+.idea/
+
+# Logs
+*.log
+
+# Environment
+.env
+env.local
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend build outputs
+dist/
+build/
+
+# Chroma DB
+chroma_db/chroma.sqlite3
+
+# Uploads
+uploads/
 # Python-specific ignores
 __pycache__/
 *.pyc
@@ -41,14 +89,19 @@ venv/
 ENV/
 env/
 *.log
+*.log.*
 Backend/grobs.db
 Backend/backend.log
+Backend/backend.log.*
 Backend/uploads/
 Backend/data/
 Backend/chroma_db/
 uploads/
 data/
 chroma_db/
+backup_cleanup_*/
+*.zip
+*.bak
 
 # Node/React
 node_modules/

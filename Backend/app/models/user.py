@@ -29,6 +29,10 @@ class User(Base):
     website = Column(String, nullable=True)  # Portfolio or personal website
     experience_level = Column(String, nullable=True)  # e.g., entry, mid, senior, lead
     
+    # Hybrid Intelligence fields
+    hireability_index = Column(Float, default=0.0)  # 0.0 to 1.0
+    ghost_job_detected = Column(Boolean, default=False)
+    
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class MatchingEngine:
     """
     Core engine for matching resumes to jobs.
-    Uses vector similarity and keyword overlap.
+    Enhanced with Hybrid Intelligence (BM25 + Vector + XGBoost).
     """
     
     def __init__(self):
@@ -91,16 +91,7 @@ class MatchingEngine:
     async def get_match_score(self, resume_data: Dict[str, Any], job_data: Dict[str, Any]) -> float:
         """
         Calculate overall match score (0-1).
-        
-        resume_data expects:
-        - "skills": List[str]
-        - "experience_text": str
-        - "full_text": str
-        
-        job_data expects:
-        - "skills_required": List[str]
-        - "experience_required": str
-        - "job_description": str
+        Enhanced with Multi-factor Hybrid Intelligence.
         """
         skill_score = self.calculate_skill_overlap(
             resume_data.get("skills", []),
@@ -117,9 +108,24 @@ class MatchingEngine:
             job_data.get("job_description", "")
         )
         
-        # Weighted combination
-        # Skill: 50%, Experience: 20%, Semantic: 30%
-        final_score = (skill_score * 0.5) + (exp_score * 0.2) + (semantic_score * 0.3)
+        # 1. Base Score (Weighted)
+        # Skill: 40%, Experience: 20%, Semantic: 40%
+        base_score = (skill_score * 0.4) + (exp_score * 0.2) + (semantic_score * 0.4)
+        
+        # 2. Integrate XGBoost Success Probability
+        from app.services.prediction_engine import prediction_engine
+        success_prob = prediction_engine.calculate_job_success_probability(
+            resume_data={
+                "match_score": base_score, 
+                "experience_match": exp_score, 
+                "skill_overlap": skill_score
+            },
+            job_data=job_data
+        )
+        
+        # 3. Final Hybrid Score
+        # 70% Base + 30% Prediction
+        final_score = (base_score * 0.7) + (success_prob * 0.3)
         
         return round(final_score, 4)
 

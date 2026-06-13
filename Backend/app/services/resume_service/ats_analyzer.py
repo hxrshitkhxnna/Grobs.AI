@@ -113,7 +113,7 @@ class EnhancedATSAnalyzer:
         )
         
         # Step 3: Calculate ML-based ATS score
-        ml_score = self._calculate_ml_score(
+        ml_score = await self._calculate_ml_score(
             resume, job_description, parsing_result, skill_analysis, use_ml=use_ml
         )
         
@@ -257,7 +257,7 @@ class EnhancedATSAnalyzer:
             "jd_skills_count": len(jd_skills),
         }
     
-    def _calculate_ml_score(
+    async def _calculate_ml_score(
         self,
         resume: Resume,
         job_description: str,
@@ -267,7 +267,7 @@ class EnhancedATSAnalyzer:
     ) -> int:
         """Calculate ML-based ATS score."""
         if not use_ml or not self.ml_scorer:
-            return self._calculate_rule_based_score(resume, job_description, skill_analysis)
+            return await self._calculate_rule_based_score(resume, job_description, skill_analysis)
         
         try:
             # Extract features for ML model
@@ -289,9 +289,9 @@ class EnhancedATSAnalyzer:
             
         except Exception as e:
             logger.error(f"ML scoring failed: {e}. Using rule-based fallback.")
-            return self._calculate_rule_based_score(resume, job_description, skill_analysis)
+            return await self._calculate_rule_based_score(resume, job_description, skill_analysis)
     
-    def _calculate_rule_based_score(
+    async def _calculate_rule_based_score(
         self,
         resume: Resume,
         job_description: str,
@@ -302,7 +302,7 @@ class EnhancedATSAnalyzer:
         
         # Use original ATS analyzer as fallback
         try:
-            result = calculate_ats_score(resume, job_description, provider="heuristic")
+            result = await calculate_ats_score(resume, job_description, provider="heuristic")
             return result.get("overall_score", 50)
         except Exception:
             # Ultimate fallback

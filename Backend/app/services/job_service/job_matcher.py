@@ -15,6 +15,8 @@ import numpy as np
 
 from app.models import Resume, ResumeContent, ResumeEmbedding, Job, JobSkill, JobEmbedding
 from app.services.scoring_engine import scoring_engine
+from app.services.hybrid_search import HybridSearchService
+from app.services.prediction_engine import prediction_engine
 
 logger = logging.getLogger(__name__)
 
@@ -35,105 +37,59 @@ class JobMatcher:
         min_score: float = 0.3
     ) -> List[Dict[str, Any]]:
         """
-        Match a resume to jobs using optimized vector similarity.
+        Match a resume to jobs using Hybrid Search and XGBoost Success Prediction.
         """
         try:
-            # 1. Get resume with skills and embedding in one or two efficient queries
-            # Using run_in_executor for DB query if it's large, but SQLAlchemy 1.4+ has async support.
-            # Here we just make the method async and assume DB calls are fast enough or handled by FastAPI threads if synchronous.
-            resume = self.db.query(Resume).options(
-                selectinload(Resume.skills),
-                selectinload(Resume.embedding)
-            ).filter(
+            # 1. Get Resume Context
+            resume = self.db.query(Resume).filter(
                 Resume.id == resume_id,
                 Resume.user_id == user_id
             ).first()
             
             if not resume:
-                logger.warning(f"Resume not found: id={resume_id}, user_id={user_id}")
                 return []
                 
-            resume_skills = set(s.name.lower() for s in resume.skills)
+            # 2. Execute Hybrid Search (BM25 + Vector)
+            hybrid_search = HybridSearchService(self.db)
+            query = f"{resume.title} {resume.summary}"
+            search_results = await hybrid_search.search(query, limit=limit * 2)
             
-            if not resume.embedding or not resume.embedding.embedding_vector:
-                # Fallback to keyword-based matching
-                logger.info(f"No embedding found for resume {resume_id}, using keyword matching")
-                return self._keyword_match_resume_to_jobs(resume_id, user_id, limit, resume_skills)
-            
-            # 2. Get all job embeddings with their associated jobs and skills in ONE query
-            # EXCLUDE mock/sample data
-            job_data = self.db.query(JobEmbedding).options(
-                joinedload(JobEmbedding.job).selectinload(Job.skills)
-            ).join(Job).filter(
-                JobEmbedding.embedding_vector.isnot(None),
-                Job.source != "Sample"
-            ).all()
-            
-            if not job_data:
-                logger.info(f"No job embeddings found, using keyword matching")
-                return self._keyword_match_resume_to_jobs(resume_id, user_id, limit, resume_skills)
-            
-            # 3. Vectorized calculations
-            resume_vec = np.array(resume.embedding.embedding_vector)
-            
+            # 3. Apply Prediction Engine for Job Success Probability
             matches = []
-            for job_emb in job_data:
-                if not job_emb.job:
+            now = datetime.utcnow()
+            for res in search_results:
+                job_id = res["id"]
+                job = self.db.query(Job).filter(Job.id == job_id).first()
+                if not job:
                     continue
                     
-                job_vec = np.array(job_emb.embedding_vector)
-                
-                # Cosine similarity
-                similarity = self._cosine_similarity(resume_vec, job_vec)
-                
-                if similarity >= min_score:
-                    # Missing keywords calculation using already loaded skills
-                    job = job_emb.job
-                    job_skill_names = set(s.skill_name.lower() for s in job.skills)
+                # Calculate job age
+                days_old = 0
+                if job.created_at:
+                    days_old = (now - job.created_at).days
                     
-                    if not job_skill_names and job.skills_required:
-                        try:
-                            if isinstance(job.skills_required, str):
-                                skills_list = json.loads(job.skills_required)
-                            else:
-                                skills_list = job.skills_required
-                            job_skill_names = set(s.lower() for s in skills_list)
-                        except Exception as e:
-                            logger.warning(f"Error parsing skills_required for job {job.id}: {e}")
-                            pass
-                            
-                    missing_keywords = list(job_skill_names - resume_skills)[:8]
-                    
-                    # Calculate advanced scoring
-                    skill_match_ratio = len(resume_skills.intersection(job_skill_names)) / len(job_skill_names) if job_skill_names else 0.5
-                    
-                    scores = {
-                        "skill_match": skill_match_ratio,
-                        "experience_match": similarity, # Proxy
-                        "keyword_match": similarity * 0.9, # Proxy
-                        "resume_quality": 0.8, # Default for matched resumes
-                        "job_difficulty": scoring_engine.estimate_job_difficulty(job.job_title, job.company_name)
+                # Calculate Success Probability
+                success_prob = prediction_engine.calculate_job_success_probability(
+                    resume_data={"match_score": res["hybrid_score"]},
+                    job_data={
+                        "posted_days_ago": days_old,
+                        "is_ghost_job": job.is_ghost_job
                     }
-                    
-                    probability_data = scoring_engine.calculate_selection_probability(scores)
-                    
-                    matches.append({
-                        "job": job,
-                        "match_score": int(probability_data["match_score"]),
-                        "selection_probability": probability_data["selection_probability"],
-                        "selection_chance": probability_data["chance"],
-                        "similarity": float(similarity),
-                        "missing_keywords": missing_keywords,
-                        "score_breakdown": probability_data["score_breakdown"]
-                    })
-            
-            # Sort by score and return top N
-            matches.sort(key=lambda x: x["match_score"], reverse=True)
+                )
+                
+                matches.append({
+                    "job": job,
+                    "match_score": int(res["hybrid_score"] * 100),
+                    "success_probability": success_prob,
+                    "hybrid_score": res["hybrid_score"]
+                })
+                
+            # Sort by success probability and return top N
+            matches.sort(key=lambda x: x["success_probability"], reverse=True)
             return matches[:limit]
             
         except Exception as e:
-            logger.error(f"Error matching resume to jobs: {e}", exc_info=True)
-            # Return empty list instead of falling back to keyword matching to avoid potential recursion
+            logger.error(f"Error in Hybrid Match: {e}")
             return []
     
     def _cosine_similarity(self, vec1: np.ndarray, vec2: np.ndarray) -> float:

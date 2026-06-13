@@ -179,7 +179,7 @@ export const analyticsAPI = {
 
 // Evaluation API calls
 export const evaluationAPI = {
-  runEvaluation: (method = 'heuristic') => api.post(`/api/evaluation/run?method=${method}`),
+  runEvaluation: () => api.post('/api/evaluation/run'),
 };
 
 // Notifications API calls

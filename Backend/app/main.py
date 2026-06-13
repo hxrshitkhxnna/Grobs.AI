@@ -44,6 +44,7 @@ from app.routers import (
     subscription_router,
     admin_router,
     calendar_router,
+    websocket_router,
 )
 from app.routers.analytics_router import router as analytics_router
 from app.routers.notifications_router import router as notifications_router
@@ -230,6 +231,7 @@ app.include_router(interview_router.router)
 app.include_router(subscription_router.router)
 app.include_router(admin_router.router)
 app.include_router(calendar_router.router)
+app.include_router(websocket_router.router)
 app.include_router(analytics_router)
 app.include_router(notifications_router)
 app.include_router(evaluation_router)

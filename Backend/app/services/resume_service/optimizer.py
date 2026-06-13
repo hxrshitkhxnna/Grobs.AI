@@ -287,7 +287,7 @@ class ResumeOptimizer:
         optimized_resume = self._merge_capped_roles(optimized_resume, full_resume_data)
 
         projected_score = await self._recalculate_ats_score(
-            optimized_resume, ctx.job_description, provider=ctx.provider
+            optimized_resume, ctx.job_description, provider=ctx.provider, user_id=ctx.user_id
         )
         diff = _compute_diff(full_resume_data, optimized_resume)
         manager_ready = _to_manager_format(optimized_resume)
@@ -324,7 +324,7 @@ class ResumeOptimizer:
         optimized_resume = self._merge_capped_roles(optimized_resume, full_resume_data)
 
         projected_score = await self._recalculate_ats_score(
-            optimized_resume, ctx.job_description, provider=ctx.provider
+            optimized_resume, ctx.job_description, provider=ctx.provider, user_id=ctx.user_id
         )
         diff = _compute_diff(full_resume_data, optimized_resume)
         manager_ready = _to_manager_format(optimized_resume)
@@ -379,6 +379,8 @@ class ResumeOptimizer:
             sorted_exp = sorted_exp[:_MAX_EXPERIENCE_ROLES]
 
         return {
+            "id":          resume.id,
+            "user_id":     resume.user_id,
             "full_name":   _safe_decrypt(resume.full_name),
             "email":        _safe_decrypt(resume.email),
             "phone":        _safe_decrypt(resume.phone),
@@ -489,9 +491,11 @@ class ResumeOptimizer:
     # ─── Step 5: Recalculate ATS ─────────────────────────────────────────────
 
     async def _recalculate_ats_score(
-        self, optimized_resume: Dict[str, Any], job_description: str, provider: Optional[str] = None
+        self, optimized_resume: Dict[str, Any], job_description: str, provider: Optional[str] = None, user_id: int = 0
     ) -> int:
         try:
+            if user_id and "user_id" not in optimized_resume:
+                optimized_resume["user_id"] = user_id
             proxy = _ResumeProxy(optimized_resume)
             result = await calculate_ats_score(proxy, job_description, provider=provider)
             return result.get("overall_score", 0)
@@ -934,8 +938,10 @@ class _ResumeProxy:
     _id_counter = 0
 
     def __init__(self, d: Dict[str, Any]) -> None:
+        from datetime import datetime
         _ResumeProxy._id_counter -= 1
-        self.id           = _ResumeProxy._id_counter
+        self.id           = d.get("id") or _ResumeProxy._id_counter
+        self.user_id      = d.get("user_id") or 0
         self.full_name    = d.get("full_name", "")
         self.email        = d.get("email", "")
         self.phone        = d.get("phone", "")
@@ -950,6 +956,18 @@ class _ResumeProxy:
             _SkillProxy(s if isinstance(s, str) else s.get("name", ""))
             for s in d.get("skills", [])
         ]
+        # Patch: Always provide updated_at for compatibility with ATS/optimizer code
+        updated_at_val = d.get("updated_at")
+        if updated_at_val:
+            try:
+                if isinstance(updated_at_val, str):
+                    self.updated_at = datetime.fromisoformat(updated_at_val)
+                else:
+                    self.updated_at = updated_at_val
+            except Exception:
+                self.updated_at = datetime.utcnow()
+        else:
+            self.updated_at = datetime.utcnow()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

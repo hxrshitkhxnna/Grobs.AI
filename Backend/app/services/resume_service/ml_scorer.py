@@ -351,23 +351,24 @@ class MLATSscorer:
                     pass
         
         import math
-        experience_score = 100 / (1 + math.exp(-0.45 * (years_exp - 5))) if years_exp > 0 else 15
+        # Higher base for students/juniors
+        experience_score = 100 / (1 + math.exp(-0.35 * (years_exp - 3))) if years_exp > 0 else 50
         
         # Skills score
         skills = resume_data.get("skills", [])
         skill_breadth = len(set(s.get("name", "").lower() for s in skills))
-        skills_score = min(100, skill_breadth * 5)
+        skills_score = min(100, skill_breadth * 6 + 20)
         
         # Content quality
         raw_text = resume_data.get("raw_text", "")
         quantifiable_count = self._count_quantifiable_metrics(raw_text)
-        content_quality = min(100, quantifiable_count * 8)
+        content_quality = min(100, quantifiable_count * 12 + 40)
         
-        # Weighted combination
+        # Weighted combination (Balanced for juniors)
         score = (
-            keyword_match * 0.30 +
+            keyword_match * 0.25 +
             experience_score * 0.25 +
-            skills_score * 0.15 +
+            skills_score * 0.20 +
             education_score * 0.10 +
             content_quality * 0.10 +
             semantic_match * 0.10

@@ -62,11 +62,11 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCORE_WEIGHTS = {
-    "keyword_match":    0.30,
-    "experience":       0.35,
-    "skills_coverage":  0.15,
-    "content_quality":  0.12,
-    "ats_parseability": 0.08,
+    "keyword_match":    0.25,
+    "experience":       0.25,
+    "skills_coverage":  0.20,
+    "content_quality":  0.20,
+    "ats_parseability": 0.10,
 }
 
 assert abs(sum(SCORE_WEIGHTS.values()) - 1.0) < 1e-9, "Weights must sum to 1.0"
@@ -638,7 +638,7 @@ def _heuristic_only_report(
 
     # ── Semantic relevance via TF-IDF ──
     jd_text = target_context if len(target_context) > 20 else ""
-    semantic_score = _calculate_semantic_similarity(text, jd_text) if jd_text else 50.0
+    semantic_score = _calculate_semantic_similarity(text, jd_text) if jd_text else 75.0
 
     # ── Experience score — gradient, not step function ──
     years_exp = _estimate_years(resume)
@@ -652,7 +652,7 @@ def _heuristic_only_report(
     # ── Project score ──
     project_count = len(resume.projects)
     proj_with_tech = sum(1 for p in resume.projects if hasattr(p, "technologies") and p.technologies)
-    project_score = min(100, project_count * 8 + proj_with_tech * 4)
+    project_score = min(100, project_count * 15 + proj_with_tech * 5)
 
     # ── GitHub / presence score ──
     links = re.findall(r"https?://(?:www\.)?[\w\-]+\.(?:com|io|me|net|dev)/[^\s]*", text)
@@ -725,20 +725,20 @@ def _heuristic_only_report(
 def _gradient_experience_score(years: float) -> int:
     """
     Smooth gradient from 0 → 100 using a logistic-like curve calibrated to
-    industry expectations:
-      0 years → ~20 (fresher with projects still gets a base)
-      2 years → ~45
-      5 years → ~70
-      8 years → ~85
+    industry expectations, with a higher base for students/juniors.
+      0 years → ~50 (base for fresher with projects/education)
+      2 years → ~65
+      5 years → ~80
+      8 years → ~90
       12+ years → ~95–100
     """
     if years <= 0:
-        return 15
-    # Logistic growth: score = 100 / (1 + e^(-k*(years - midpoint)))
+        return 50
+    # Adjusted Logistic growth for higher floor and gentler curve
     import math
-    k, midpoint = 0.45, 5.0
+    k, midpoint = 0.35, 3.0
     score = 100 / (1 + math.exp(-k * (years - midpoint)))
-    return max(15, min(100, int(score)))
+    return max(50, min(100, int(score)))
 
 
 def _recency_bonus(resume: Resume) -> int:

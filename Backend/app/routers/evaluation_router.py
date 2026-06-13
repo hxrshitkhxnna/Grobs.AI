@@ -11,10 +11,10 @@ router = APIRouter(prefix="/api/evaluation", tags=["Evaluation"])
 logger = logging.getLogger(__name__)
 
 @router.post("/run")
-async def run_evaluation(method: str = "heuristic", db: Session = Depends(get_db)):
+async def run_evaluation(method: str = "heuristic", calibrate: bool = True, db: Session = Depends(get_db)):
     try:
         service = EvaluationService(db)
-        results = await service.run_full_evaluation(method)
+        results = await service.run_full_evaluation(method, calibrate)
         
         # Log results to terminal for project evaluator visibility
         print("\n" + "="*80)

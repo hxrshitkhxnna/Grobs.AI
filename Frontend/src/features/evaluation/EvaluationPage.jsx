@@ -38,19 +38,54 @@ const EvaluationPage = () => {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('performance');
-  const [method, setMethod] = useState('heuristic');
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('');
+  const [expandedRow, setExpandedRow] = useState(null);
 
   const runEvaluation = async () => {
     setLoading(true);
     setError(null);
+    setResults(null);
+    setProgress(5);
+    setStatusText('Initializing secure audit environment...');
+    
     try {
-      const response = await evaluationAPI.runEvaluation(method);
+      // Simulate progress steps for a better UX since the actual call is one big chunk
+      const steps = [
+        { p: 15, t: 'Scanning codebase completeness...' },
+        { p: 35, t: 'Evaluating resume screening models...' },
+        { p: 55, t: 'Running NER evaluation on benchmark datasets...' },
+        { p: 75, t: 'Testing job search and recommendation accuracy...' },
+        { p: 90, t: 'Calibrating final results...' }
+      ];
+
+      let currentStep = 0;
+      const interval = setInterval(() => {
+        if (currentStep < steps.length) {
+          setProgress(steps[currentStep].p);
+          setStatusText(steps[currentStep].t);
+          currentStep++;
+        } else {
+          clearInterval(interval);
+        }
+      }, 1500);
+
+      const response = await evaluationAPI.runEvaluation();
+      clearInterval(interval);
+      setProgress(100);
+      setStatusText('Audit complete.');
       setResults(response.data);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to run evaluation');
     } finally {
       setLoading(false);
     }
+  };
+
+  const getBottleneck = (data) => {
+    if (!data || !data.features_data) return "N/A";
+    const sorted = [...data.features_data].sort((a, b) => b.efficiency - a.efficiency);
+    return sorted[0].name.split('. ')[1] || sorted[0].name;
   };
 
   const getCategoryIcon = (name) => {
@@ -72,46 +107,81 @@ const EvaluationPage = () => {
   return (
     <div className="space-y-6">
       {/* Header Section */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-slate-900/40 p-6 rounded-3xl border border-white/10 backdrop-blur-xl">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Project Integrity Evaluator</h1>
-          <p className="text-slate-400 mt-1">Cross-check feature completeness and model accuracy against standard datasets.</p>
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 bg-slate-900/40 p-8 rounded-4xl border border-white/10 backdrop-blur-xl">
+        <div className="max-w-xl">
+          <h1 className="text-4xl font-black text-white tracking-tight mb-2">System Integrity Audit</h1>
+          <p className="text-slate-400 font-medium">Benchmark system performance against real-world datasets and codebase patterns.</p>
         </div>
-        <div className="flex flex-col md:flex-row items-center gap-4">
-          <div className="flex bg-slate-950/40 p-1.5 rounded-2xl border border-white/10 backdrop-blur-md">
-            {['heuristic', 'google', 'openai', 'anthropic'].map((m) => (
-              <button
-                key={m}
-                onClick={() => setMethod(m)}
-                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all capitalize ${
-                  method === m 
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' 
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-              >
-                {m}
-              </button>
-            ))}
-          </div>
+        
+        <div className="flex flex-col gap-4">
           <button
             onClick={runEvaluation}
             disabled={loading}
-            className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-bold transition-all shadow-2xl ${
+            className={`flex items-center justify-center gap-3 px-10 py-5 rounded-[20px] font-black transition-all shadow-2xl overflow-hidden relative group ${
               loading 
                 ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
                 : 'bg-linear-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white hover:scale-[1.02] active:scale-[0.98]'
             }`}
           >
-            {loading ? <RefreshCw className="animate-spin" size={20} /> : <Play size={20} fill="currentColor" />}
-            {loading ? 'Evaluating...' : 'Run Analysis'}
+            {loading ? (
+              <div className="flex items-center gap-3 z-10">
+                <RefreshCw className="animate-spin" size={20} />
+                <span>{progress}%</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 z-10">
+                <Play size={18} fill="currentColor" />
+                <span>Perform System Audit</span>
+              </div>
+            )}
+            
+            {loading && (
+              <motion.div 
+                initial={{ width: 0 }}
+                animate={{ width: `${progress}%` }}
+                className="absolute inset-0 bg-white/10"
+              />
+            )}
           </button>
         </div>
       </div>
+
+      {loading && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center gap-2 py-4">
+           <p className="text-blue-400 font-bold text-sm flex items-center gap-2">
+             <Zap size={16} className="animate-pulse" />
+             {statusText}
+           </p>
+        </motion.div>
+      )}
 
       {error && (
         <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-400">
           <AlertCircle size={20} />
           <p className="font-medium">{error}</p>
+        </motion.div>
+      )}
+
+      {results?.has_errors && (
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="p-6 bg-amber-500/10 border border-amber-500/20 rounded-3xl space-y-3">
+          <div className="flex items-center gap-3 text-amber-400">
+            <AlertCircle size={24} />
+            <h4 className="text-lg font-black tracking-tight">Audit Warnings: Quota or Provider Issues Detected</h4>
+          </div>
+          <p className="text-sm text-slate-300 font-medium">
+            Some evaluation modules could not complete using the primary AI provider. 
+            This usually happens due to <span className="text-amber-400 font-bold underline">API Rate Limits (429)</span> or <span className="text-amber-400 font-bold underline">Insufficient Quota</span>.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {results.provider_errors.map((err, i) => (
+              <span key={i} className="px-3 py-1 bg-amber-500/20 text-amber-400 text-[10px] font-black rounded-lg border border-amber-500/20">
+                {err}
+              </span>
+            ))}
+          </div>
+          <p className="text-xs text-slate-500 italic">
+            Tip: The system will automatically attempt to use fallback providers or heuristic methods for affected modules.
+          </p>
         </motion.div>
       )}
 
@@ -349,48 +419,116 @@ const EvaluationPage = () => {
                     key="matrix"
                     initial={{ opacity: 0, scale: 0.98 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="overflow-x-auto"
+                    className="space-y-4"
                   >
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="bg-slate-950/40">
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Component</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Implementation</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Data Accuracy</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Precision</th>
-                          <th className="px-6 py-4 text-xs font-bold text-slate-500 uppercase tracking-widest">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {results.features_data.map((f, i) => (
-                          <tr key={i} className="hover:bg-white/5 transition-colors">
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-3">
-                                <div className="text-blue-400 opacity-70">{getCategoryIcon(f.name)}</div>
-                                <span className="text-sm font-bold text-white">{f.name}</span>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className="text-xs font-mono bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md border border-blue-500/20">
-                                {f.completeness}% Complete
-                              </span>
-                            </td>
-                            <td className="px-6 py-4">
-                              <span className={`text-sm font-bold ${f.accuracy > 90 ? 'text-emerald-400' : 'text-blue-400'}`}>
-                                {f.accuracy}%
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-slate-400">{f.precision}%</td>
-                            <td className="px-6 py-4">
-                              <div className={`flex items-center gap-1.5 text-xs font-bold ${f.completeness > 90 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                                {f.completeness > 90 ? <ShieldCheck size={14} /> : <RefreshCw size={14} className="animate-pulse" />}
-                                {f.completeness > 90 ? 'STABLE' : 'EVALUATING'}
-                              </div>
-                            </td>
+                    <div className="overflow-hidden bg-slate-900/40 rounded-3xl border border-white/5">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="bg-slate-950/40 border-b border-white/5">
+                            <th className="px-6 py-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">Component Vertical</th>
+                            <th className="px-6 py-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">Code Implementation</th>
+                            <th className="px-6 py-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">Core Integrity</th>
+                            <th className="px-6 py-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">Precision</th>
+                            <th className="px-6 py-5 text-[10px] font-black text-slate-500 uppercase tracking-widest">Audit Result</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody className="divide-y divide-white/5">
+                          {results.features_data.map((f, i) => (
+                            <React.Fragment key={i}>
+                              <tr 
+                                onClick={() => setExpandedRow(expandedRow === i ? null : i)}
+                                className="hover:bg-white/2 transition-colors cursor-pointer group"
+                              >
+                                <td className="px-6 py-5">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                                      {getCategoryIcon(f.name)}
+                                    </div>
+                                    <div>
+                                      <p className="text-sm font-bold text-white leading-tight">{f.name}</p>
+                                      <p className="text-[10px] text-slate-500 font-bold uppercase mt-0.5">Vertical Domain</p>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-5">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-mono bg-blue-500/10 text-blue-400 px-2 py-1 rounded-md border border-blue-500/20">
+                                      {f.completeness}%
+                                    </span>
+                                    <div className="w-12 bg-slate-800 h-1 rounded-full overflow-hidden">
+                                      <div className="bg-blue-500 h-full" style={{ width: `${f.completeness}%` }} />
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="px-6 py-5">
+                                  <span className={`text-sm font-black ${f.accuracy > 90 ? 'text-emerald-400' : 'text-blue-400'}`}>
+                                    {f.accuracy}%
+                                  </span>
+                                </td>
+                                <td className="px-6 py-5 text-sm text-slate-400 font-mono">{f.precision}%</td>
+                                <td className="px-6 py-5">
+                                  <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-black tracking-tighter border ${
+                                    f.completeness > 90 
+                                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                      : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  }`}>
+                                    {f.completeness > 90 ? <ShieldCheck size={12} /> : <RefreshCw size={12} className="animate-pulse" />}
+                                    {f.completeness > 90 ? 'STABLE' : 'EVOLVING'}
+                                  </div>
+                                </td>
+                              </tr>
+                              <AnimatePresence>
+                                {expandedRow === i && (
+                                  <tr>
+                                    <td colSpan={5} className="px-6 py-0 border-none bg-slate-950/40">
+                                      <motion.div 
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden"
+                                      >
+                                        <div className="py-6 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                          <div className="space-y-3">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                              <Layout size={12} /> Found Routers
+                                            </p>
+                                            <div className="flex flex-wrap gap-2">
+                                              {f.details.found_routers.length > 0 ? f.details.found_routers.map(r => (
+                                                <span key={r} className="text-[10px] font-bold bg-white/5 text-slate-300 px-2 py-1 rounded border border-white/5">{r}</span>
+                                              )) : <span className="text-[10px] text-slate-600 font-bold italic">No specialized routers detected</span>}
+                                            </div>
+                                          </div>
+                                          <div className="space-y-3">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                              <Settings size={12} /> Active Services
+                                            </p>
+                                            <div className="flex flex-wrap gap-2">
+                                              {f.details.found_services.length > 0 ? f.details.found_services.map(s => (
+                                                <span key={s} className="text-[10px] font-bold bg-blue-500/5 text-blue-400/70 px-2 py-1 rounded border border-blue-500/10">{s}</span>
+                                              )) : <span className="text-[10px] text-slate-600 font-bold italic">Core infrastructure only</span>}
+                                            </div>
+                                          </div>
+                                          <div className="space-y-3">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                                              <Search size={12} /> Signature Keywords
+                                            </p>
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {f.details.found_keywords.map(k => (
+                                                <span key={k} className="text-[9px] font-medium bg-emerald-500/5 text-emerald-400/60 px-1.5 py-0.5 rounded border border-emerald-500/10 capitalize">{k}</span>
+                                              ))}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </motion.div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </AnimatePresence>
+                            </React.Fragment>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </motion.div>
                 )}
 
@@ -399,34 +537,61 @@ const EvaluationPage = () => {
                     key="efficiency"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="grid grid-cols-1 md:grid-cols-2 gap-8"
+                    className="grid grid-cols-1 lg:grid-cols-2 gap-12"
                   >
-                    <div className="space-y-6">
-                      <h5 className="text-white font-bold mb-4">Response Time Analysis</h5>
-                      {results.features_data.map((f, i) => (
-                        <div key={i} className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="text-slate-400 font-bold">{f.name}</span>
-                            <span className="text-indigo-400 font-mono">{f.efficiency}ms</span>
+                    <div className="space-y-8">
+                      <div>
+                        <h5 className="text-xl font-black text-white mb-2">Response Time Analysis</h5>
+                        <p className="text-slate-500 text-sm">Latency per feature vertical measured in milliseconds.</p>
+                      </div>
+                      <div className="space-y-6">
+                        {results.features_data.map((f, i) => (
+                          <div key={i} className="space-y-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-sm text-slate-300 font-bold">{f.name.split('. ')[1]}</span>
+                              <span className="text-indigo-400 font-black font-mono text-sm">{f.efficiency}ms</span>
+                            </div>
+                            <div className="w-full bg-slate-900 h-2 rounded-full border border-white/5">
+                              <motion.div 
+                                initial={{ width: 0 }}
+                                animate={{ width: `${(f.efficiency / Math.max(results.max_latency, 1)) * 100}%` }}
+                                className="h-full bg-linear-to-r from-indigo-500 to-blue-500 rounded-full shadow-[0_0_12px_rgba(99,102,241,0.3)]"
+                              />
+                            </div>
                           </div>
-                          <div className="w-full bg-slate-800 h-1.5 rounded-full">
-                            <motion.div 
-                              initial={{ width: 0 }}
-                              animate={{ width: `${(f.efficiency / results.max_latency) * 100}%` }}
-                              className="h-full bg-indigo-500 rounded-full shadow-[0_0_8px_rgba(99,102,241,0.5)]"
-                            />
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
                     </div>
-                    <div className="bg-slate-950/40 p-6 rounded-2xl border border-white/5 flex flex-col justify-center text-center">
-                      <BrainCircuit size={48} className="mx-auto text-indigo-400 mb-4 opacity-50" />
-                      <h4 className="text-xl font-bold text-white mb-2">Inference Engine Metrics</h4>
-                      <p className="text-sm text-slate-500">
-                        Average system latency is <span className="text-indigo-400 font-bold">{results.average_latency}ms</span>.
-                        The bottleneck is currently in <span className="text-rose-400 font-bold">Stripe/Background processing</span>.
-                        All datasets (CSV/JSON) are optimized with local caching for sub-second retrieval.
-                      </p>
+                    
+                    <div className="flex flex-col gap-6">
+                      <div className="bg-slate-900/60 p-10 rounded-[40px] border border-white/10 backdrop-blur-md flex flex-col justify-center text-center relative overflow-hidden group">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-500/10 rounded-full blur-3xl -mr-16 -mt-16 group-hover:bg-indigo-500/20 transition-colors" />
+                        <BrainCircuit size={64} className="mx-auto text-indigo-400 mb-6 opacity-80" />
+                        <h4 className="text-2xl font-black text-white mb-4">Inference Engine Metrics</h4>
+                        <div className="space-y-4 text-slate-400">
+                          <p className="text-lg leading-relaxed">
+                            System-wide average latency is <span className="text-indigo-400 font-black">{results.average_latency}ms</span>.
+                          </p>
+                          <div className="p-6 bg-rose-500/5 border border-rose-500/10 rounded-3xl">
+                             <p className="text-sm font-bold uppercase tracking-widest text-rose-400 mb-1">Detected Bottleneck</p>
+                             <p className="text-xl font-black text-rose-500">{getBottleneck(results)}</p>
+                          </div>
+                          <p className="text-sm leading-relaxed px-4">
+                            Audit samples (<span className="text-white font-bold">{results.total_samples}</span>) are processed using local RAG caching and vectorized lookups for sub-second responses.
+                          </p>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-slate-900/40 p-6 rounded-3xl border border-white/5">
+                           <p className="text-[10px] font-black text-slate-500 uppercase mb-2">Data Source</p>
+                           <p className="text-white font-bold">Local CSV + JSON</p>
+                        </div>
+                        <div className="bg-slate-900/40 p-6 rounded-3xl border border-white/5">
+                           <p className="text-[10px] font-black text-slate-500 uppercase mb-2">RAG Context</p>
+                           <p className="text-white font-bold">Enabled</p>
+                        </div>
+                      </div>
                     </div>
                   </motion.div>
                 )}

@@ -17,6 +17,10 @@ class Skill(Base):
     name = Column(String, nullable=False, index=True, unique=True)
     category = Column(String, default="Technical")  # Technical, Soft, Domain, etc.
     
+    # Verified Skills Ecosystem
+    verification_status = Column(String, default="unverified")  # unverified, machine_verified, human_verified
+    confidence_score = Column(Integer, default=0)  # 0-100
+    
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

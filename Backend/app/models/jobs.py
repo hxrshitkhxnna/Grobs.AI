@@ -36,6 +36,9 @@ class Job(Base):
     posted_date = Column(String, nullable=True)
     source = Column(String, nullable=True)  # Greenhouse, Lever, Indeed, etc.
     
+    # Hybrid Intelligence fields
+    is_ghost_job = Column(Boolean, default=False)
+    
     # AI-enhanced fields
     tags = Column(JSON, nullable=True)  # JSON array: ["backend", "remote", "fresher"]
     match_score = Column(Float, nullable=True)  # Overall match score (0-100)
@@ -116,6 +119,10 @@ class JobApplication(Base):
     job_title = Column(String, nullable=True)
     company = Column(String, nullable=True)
     status = Column(String, default="applied")  # applied, interview, offer, rejected
+    
+    # Hybrid Intelligence fields
+    success_probability = Column(Float, default=0.0)  # Calculated by XGBoost model
+    match_breakdown = Column(JSON, nullable=True)  # Detailed score components
     
     # Dates
     applied_date = Column(String, nullable=True)

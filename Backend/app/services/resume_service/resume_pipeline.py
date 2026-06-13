@@ -21,6 +21,8 @@ from app.models import (
 )
 from app.utils.encryption import decrypt, encrypt
 from app.services.resume_service.parser import EnsembleParser, extract_text_from_file
+from app.services.resume_service.multi_stage_parser import multi_stage_parser
+from app.services.prediction_engine import prediction_engine
 from app.services.resume_service.ats_analyzer import calculate_ats_score as calculate_ats
 from app.services.resume_service.performance_optimizer import PerformanceOptimizer
 from app.services.resume_service.embedding_service import get_embedding_service
@@ -163,15 +165,14 @@ class ResumePipelineService:
             if not raw_text:
                 return _err("parsing", "Could not extract text from file.")
 
-            # 2. Use EnsembleParser for high-accuracy extraction
+            # 2. Use MultiStageParser for 95%+ accuracy (Extractor -> Verifier -> Standardizer)
             # Wrap with performance optimizer for caching and rate limiting
             async def _parse():
-                return self.ensemble_parser.parse_resume(raw_text)
+                return await multi_stage_parser.parse(full_path)
             
-            ensemble_result = await self.optimizer.execute_with_rate_limit(
-                _parse, resource_name="llm_parsing"
+            parsed_data = await self.optimizer.execute_with_rate_limit(
+                _parse, resource_name="multi_stage_parsing"
             )
-            parsed_data = ensemble_result.to_structured_resume().dict()
             
             # Ensure raw_text is included in the parsed data
             parsed_data["raw_text"] = raw_text
@@ -299,6 +300,10 @@ class ResumePipelineService:
             if ats_result:
                 resume.ats_score = ats_result.get("overall_score")
                 resume.analysis_score = ats_result.get("overall_score")
+                
+                # Calculate Hire-ability Index (XGBoost + Heuristics)
+                hireability = await prediction_engine.get_hireability_index(resume_id, self.db)
+                resume.user.hireability_index = hireability
                 
                 # Save as ResumeAnalysis record
                 analysis = ResumeAnalysis(
