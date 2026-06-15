@@ -1,113 +1,50 @@
 # GrobsAI Backend
 
-A robust Python-based FastAPI service for GrobsAI - an AI-powered career platform. This backend manages resumes, job listings, and provides AI-driven career tools.
+Monorepo backend built with **FastAPI** for GrobsAI (AI-powered career platform).
 
-## 🚀 Features
+## Structure
 
-- **Resume Analysis**: AI-powered resume parsing and ATS compatibility scoring.
-- **Job Engine**: Personalized job recommendations and application tracking.
-- **Interview AI**: AI-generated mock interviews and real-time feedback.
-- **Background Processing**: Celery-powered tasks for long-running AI processes.
-- **Data Persistence**: SQLAlchemy-based PostgreSQL integration with Alembic migrations.
+- `app/` - FastAPI application code (routers, services, models)
+- `migrations/` - Alembic migrations
+- `tests/` - Pytest test suite
 
-## 🛠️ Tech Stack
+## Getting started (local)
 
-- **Framework**: FastAPI (Python 3.9+)
-- **ORM**: SQLAlchemy
-- **Migrations**: Alembic
-- **Database**: PostgreSQL (Development supports SQLite)
-- **Task Queue**: Celery with Redis
-- **Testing**: Pytest
-- **Security**: JWT-based authentication
+### 1) Create virtual environment
 
-## 📋 Prerequisites
+```powershell
+python -m venv venv
+.
+venv\Scripts\activate
+```
 
-- **Python 3.9+**
-- **PostgreSQL** (Optional for development)
-- **Redis** (For Celery tasks)
+### 2) Install dependencies
 
-## ⚙️ Installation & Setup
+```powershell
+pip install -r requirements.txt
+```
 
-1. **Clone the repository** (if not already done)
-   ```bash
-   git clone <repository-url>
-   cd Backend
-   ```
+### 3) Configure environment
 
-2. **Create and activate a virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+Copy `.env.example` to `.env` (create `.env` if needed) and set your variables.
 
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 4) Start the API (FastAPI)
 
-4. **Environment Configuration**
-   Copy `.env.example` to `.env` and configure your environment variables:
-   ```bash
-   cp .env.example .env
-   ```
+```powershell
+uvicorn app.main:app --reload --port 8000
+```
 
-5. **Initialize Database**
-   ```bash
-   python setup.py
-   ```
+After starting, open API docs:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc
 
-6. **Start the Development Server**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
+## Run tests
 
-## 🧪 Running Tests
-
-Run the full test suite using Pytest:
-```bash
+```powershell
 pytest
 ```
 
-For coverage reports:
-```bash
-pytest --cov=app
-```
+## Notes
 
-## 📁 Project Structure
+- Database migrations are managed with Alembic (see `migrations/`).
 
-```
-Backend/
-├── app/                  # Main application code
-│   ├── core/            # Configuration and security
-│   ├── models/          # SQLAlchemy database models
-│   ├── routers/         # API endpoints
-│   ├── schemas/         # Pydantic data validation
-│   ├── services/        # Business logic and AI services
-│   ├── workers/         # Celery background tasks
-│   └── main.py          # Application entry point
-├── migrations/          # Alembic database migrations
-├── tests/               # Pytest unit and integration tests
-├── requirements.txt     # Python dependencies
-└── setup.py             # Database initialization script
-```
-
-## 📖 API Documentation
-
-Once the server is running, interactive API documentation is available at:
-- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-
-## 🚢 Deployment
-
-1. **Build Docker Image**
-   ```bash
-   docker build -t grobsai-backend .
-   ```
-
-2. **Run with Docker Compose** (Recommended)
-   ```bash
-   docker-compose up -d
-   ```
-
----
-*Part of the GrobsAI platform.*
